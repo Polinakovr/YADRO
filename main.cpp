@@ -1,304 +1,365 @@
-#include <iostream>
-#include <fstream>
-#include <string>
-#include <sstream>
-#include <vector>
-#include <stdexcept>
-#include <utility>
-#include <algorithm>
-#include <map>
-#include <set>
-class Time
+#include "library.hpp"
+
+std::pair<int, int> Time::gettime(const std::string &str)
 {
-private:
-public:
-    static std::pair<int, int> gettime(const std::string &str)
+    check_time(str);
+    int hours = std::stoi(str.substr(0, 2));
+    int minutes = std::stoi(str.substr(3, 2));
+    if (hours < 0 || hours > 23)
     {
-        check_time(str);
-        int hours = std::stoi(str.substr(0, 2));
-        int minutes = std::stoi(str.substr(3, 2));
-        if (hours < 0 || hours > 23)
-        {
-            throw std::invalid_argument("Часы должны быть между 00 и 23");
-        }
-
-        if (minutes < 0 || minutes > 59)
-        {
-            throw std::invalid_argument("Минуты должны быть между 00 и 59");
-        }
-        return {hours, minutes};
+        throw std::invalid_argument("Часы должны быть между 00 и 23");
     }
-    static void check_time(const std::string &str)
+    if (minutes < 0 || minutes > 59)
     {
-        if (str.length() != 5 || str[2] != ':')
-        {
-            throw std::invalid_argument("Время должно быть в формате XX:XX");
-        }
+        throw std::invalid_argument("Минуты должны быть между 00 и 59");
+    }
+    return {hours, minutes};
+}
 
-        for (int i : {0, 1, 3, 4})
+void Time::check_time(const std::string &str)
+{
+    if (str.length() != 5 || str[2] != ':')
+    {
+        throw std::invalid_argument("Время должно быть в формате XX:XX");
+    }
+    for (int i : {0, 1, 3, 4})
+    {
+        if (!isdigit(str[i]))
         {
-            if (!isdigit(str[i]))
-            {
-                throw std::invalid_argument("Время должно содержать только цифры и двоеточие");
-            }
+            throw std::invalid_argument("Время должно содержать только цифры и двоеточие");
         }
     }
-};
-struct Table
-{
-    int number;
-    int revenue = 0;
-    std::string current_client;
-};
-struct Event
-{
-    std::pair<int, int> time_event;
-    int id;
-    std::string client_name;
-    int table_number = 0;
-};
-class Computer_club
-{
-private:
-    std::ifstream file;
-    int count_table;
-    int price;
-    std::vector<Event> events;
-    std::vector<Table> tables;
-    std::pair<int, int> time_work_start;
-    std::pair<int, int> time_work_end;
+}
 
-public:
-    void handle_client_arrival(const Event &n)
+std::string Time::format_time(const std::pair<int, int> &time)
+{
+    char buffer[6];
+    snprintf(buffer, sizeof(buffer), "%02d:%02d", time.first, time.second);
+    return std::string(buffer);
+}
+std::pair<int, int> Time::time_diff(const std::pair<int, int> &start, const std::pair<int, int> &end)
+{
+    int start_min = start.first * 60 + start.second;
+    int end_min = end.first * 60 + end.second;
+    int diff_min = end_min - start_min;
+
+    if (diff_min < 0)
     {
-        for (const auto &c : events)
-        {
-            if (c.client_name == n.client_name)
-            {
-                throw std::runtime_error("YouShallNotPass");
-            }
-        }
-        if (n.time_event.first < time_work_start.first ||
-            (n.time_event.first == time_work_start.first &&
-             n.time_event.second < time_work_start.second) ||
-            n.time_event.first > time_work_end.first ||
-            (n.time_event.first == time_work_end.first &&
-             n.time_event.second > time_work_end.second))
-        {
-            throw std::invalid_argument("NotOpenYet");
-        }
+        diff_min += 24 * 60;
     }
-    void handle_client_seat(const Event &event)
+    return {diff_min / 60, diff_min % 60};
+}
+
+void Computer_club::print_event(int id, const std::pair<int, int> &time, const std::string &client_name, int table_num = 0)
+{
+    std::cout << Time::format_time(time) << " " << id << " " << client_name;
+    if (table_num != 0)
     {
-        bool client_exists = false;
-        bool client_already_seated = false;
-        int current_table = 0;
+        std::cout << " " << table_num;
+    }
+    std::cout << std::endl;
+}
 
-        for (const auto &e : events)
-        {
-            if (e.client_name == event.client_name)
-            {
-                client_exists = true;
-                if (e.id == 2)
-                {
-                    client_already_seated = true;
-                    current_table = e.table_number;
-                }
-            }
-        }
+void Computer_club::calculate_revenue(Table &table, const std::pair<int, int> &end_time)
+{
+    if (table.occupied_since.first == 0 && table.occupied_since.second == 0)
+        return;
 
-        if (!client_exists)
-        {
-            throw std::runtime_error("ClientUnknown");
-        }
+    auto diff = Time::time_diff(table.occupied_since, end_time);
 
-        if (event.table_number < 1 || event.table_number > count_table)
-        {
-            throw std::invalid_argument("Неверный номер стола");
-        }
+    table.usage.first += diff.first;
+    table.usage.second += diff.second;
+    if (table.usage.second >= 60)
+    {
+        table.usage.first += table.usage.second / 60;
+        table.usage.second %= 60;
+    }
+
+    int hours = diff.first + (diff.second > 0 ? 1 : 0);
+    table.revenue += hours * price;
+}
+
+void Computer_club::print_error(const std::pair<int, int> &time, const std::string &str)
+{
+    std::cout << Time::format_time(time) << " 13 " << str << std::endl;
+}
+
+void Computer_club::end_work()
+{
+    std::vector<std::string> remaining_clients(present_clients.begin(), present_clients.end());
+    std::sort(remaining_clients.begin(), remaining_clients.end());
+
+    for (const auto &client : remaining_clients)
+    {
+        print_event(11, time_work_end, client);
 
         for (auto &table : tables)
         {
-            if (table.number == event.table_number)
+            if (table.current_client == client)
             {
-                if (!table.current_client.empty() && table.current_client != event.client_name)
-                {
-                    throw std::runtime_error("PlaceIsBusy");
-                }
+                calculate_revenue(table, time_work_end);
+                table.current_client.clear();
+                table.occupied_since = {0, 0};
             }
         }
+    }
 
-        if (client_already_seated)
+    for (auto &table : tables)
+    {
+        std::cout << table.number << " " << table.revenue << " "
+                  << Time::format_time(table.usage) << std::endl;
+    }
+}
+
+void Computer_club::handle_client_arrival(const Event &n)
+{
+    if (present_clients.find(n.client_name) != present_clients.end())
+    {
+        print_error(n.time_event, "YouShallNotPass");
+        return;
+    }
+
+    if (n.time_event.first < time_work_start.first ||
+        (n.time_event.first == time_work_start.first &&
+         n.time_event.second < time_work_start.second) ||
+        n.time_event.first > time_work_end.first ||
+        (n.time_event.first == time_work_end.first &&
+         n.time_event.second > time_work_end.second))
+    {
+        print_error(n.time_event, "NotOpenYet");
+        return;
+    }
+
+    present_clients.insert(n.client_name);
+}
+
+void Computer_club::handle_client_seat(const Event &event)
+{
+    if (present_clients.find(event.client_name) == present_clients.end())
+    {
+        print_error(event.time_event, "ClientUnknown");
+        return;
+    }
+
+    if (event.table_number < 1 || event.table_number > count_table)
+    {
+        print_error(event.time_event, "Неверный номер стола");
+        return;
+    }
+
+    Table &target_table = tables[event.table_number - 1];
+
+    if (!target_table.current_client.empty() && target_table.current_client != event.client_name)
+    {
+        print_error(event.time_event, "PlaceIsBusy");
+        return;
+    }
+
+    for (auto &table : tables)
+    {
+        if (table.current_client == event.client_name && table.number != event.table_number)
         {
-            for (auto &table : tables)
+            calculate_revenue(table, event.time_event);
+            table.current_client.clear();
+            break;
+        }
+    }
+
+    target_table.current_client = event.client_name;
+    target_table.occupied_since = event.time_event;
+}
+
+void Computer_club::handle_client_wait(const Event &n)
+{
+    bool has_free_tables = false;
+    for (const auto &table : tables)
+    {
+        if (table.current_client.empty())
+        {
+            has_free_tables = true;
+            break;
+        }
+    }
+
+    if (has_free_tables)
+    {
+        print_error(n.time_event, "ICanWaitNoLonger!");
+        return;
+    }
+
+    if (waiting_queue.size() >= count_table)
+    {
+        present_clients.erase(n.client_name);
+        print_event(11, n.time_event, n.client_name);
+        return;
+    }
+
+    waiting_queue.push(n.client_name);
+}
+
+void Computer_club::handle_client_leaves(const Event &event)
+{
+    if (present_clients.find(event.client_name) == present_clients.end())
+    {
+        print_error(event.time_event, "ClientUnknown");
+        return;
+    }
+
+    for (auto &table : tables)
+    {
+        if (table.current_client == event.client_name)
+        {
+            calculate_revenue(table, event.time_event);
+            table.current_client.clear();
+            table.occupied_since = {0, 0};
+            present_clients.erase(event.client_name);
+
+            if (!waiting_queue.empty())
             {
-                if (table.number == current_table)
-                {
-                    table.current_client.clear();
-                    break;
-                }
+                std::string next_client = waiting_queue.front();
+                waiting_queue.pop();
+                table.current_client = next_client;
+                table.occupied_since = event.time_event;
+                print_event(12, event.time_event, next_client, table.number);
             }
+            break;
+        }
+    }
+}
+
+void Computer_club::read_file(const std::string &filename)
+{
+    std::pair<int, int> timecurrent = {0, 0};
+    std::string line;
+    file.open(filename);
+    try
+    {
+        if (!file.is_open())
+        {
+            throw std::runtime_error("Не удалось открыть файл");
         }
 
-        for (auto &table : tables)
+        if (!std::getline(file, line))
         {
-            if (table.number == event.table_number)
+            throw std::runtime_error("Не удалось считать данные");
+        }
+        count_table = std::stoi(line);
+        if (count_table <= 0)
+            throw std::invalid_argument("Количество столов не может быть меньше 1");
+        tables.resize(count_table);
+        for (int i = 0; i < count_table; ++i)
+        {
+            tables[i].number = i + 1;
+        }
+
+        if (!std::getline(file, line))
+            throw std::runtime_error("Не удалось считать данные");
+        std::istringstream time_iss(line);
+        std::string start_str, end_str;
+        if (!(time_iss >> start_str >> end_str))
+            throw std::invalid_argument("Неверный формат времени работы");
+        time_work_start = Time::gettime(start_str);
+        time_work_end = Time::gettime(end_str);
+
+        if (!std::getline(file, line))
+            throw std::runtime_error("Не удалось считать данные");
+        price = std::stoi(line);
+        if (price <= 0)
+            throw std::invalid_argument("Цена не может быть меньше 0");
+
+        std::cout << Time::format_time(time_work_start) << std::endl;
+
+        while (std::getline(file, line))
+        {
+            if (line.empty())
+                continue;
+
+            Event event;
+            std::istringstream iss(line);
+            std::string time_str;
+
+            if (!(iss >> time_str >> event.id))
             {
-                table.current_client = event.client_name;
+                throw std::invalid_argument("Неверный формат события");
+            }
+
+            Time::check_time(time_str);
+            event.time_event = Time::gettime(time_str);
+
+            if (event.time_event.first < timecurrent.first ||
+                (event.time_event.first == timecurrent.first &&
+                 event.time_event.second < timecurrent.second))
+            {
+                throw std::invalid_argument("События должны идти последовательно во времени");
+            }
+
+            if (event.id == 1 || event.id == 3 || event.id == 4)
+            {
+                if (!(iss >> event.client_name))
+                {
+                    throw std::invalid_argument("Не указано имя клиента");
+                }
+            }
+            else if (event.id == 2)
+            {
+                if (!(iss >> event.client_name >> event.table_number))
+                {
+                    throw std::invalid_argument("Неверный формат события для ID 2");
+                }
+                if (event.table_number > count_table || event.table_number < 1)
+                {
+                    throw std::invalid_argument("Неверный номер стола");
+                }
+            }
+            else
+            {
+                throw std::invalid_argument("Неизвестный ID события");
+            }
+
+            for (char c : event.client_name)
+            {
+                if (!(islower(c) || isdigit(c) || c == '_' || c == '-'))
+                {
+                    throw std::invalid_argument("Неправильное имя клиента");
+                }
+            }
+
+            timecurrent = event.time_event;
+
+            std::cout << Time::format_time(event.time_event) << " " << event.id << " " << event.client_name;
+            if (event.table_number != 0)
+            {
+                std::cout << " " << event.table_number;
+            }
+            std::cout << std::endl;
+
+            switch (event.id)
+            {
+            case 1:
+                handle_client_arrival(event);
+                break;
+            case 2:
+                handle_client_seat(event);
+                break;
+            case 3:
+                handle_client_wait(event);
+                break;
+            case 4:
+                handle_client_leaves(event);
+                break;
+            default:
                 break;
             }
         }
+
+        end_work();
     }
-    void handle_client_wait(const struct Event &n)
+    catch (const std::exception &e)
     {
-        for (auto &table : tables)
-        {
-            if (table.current_client == " ")
-            {
-                throw std::runtime_error("ICanWaitNoLonger!");
-            }
-        }
-        int count = 0;
-        for (auto &ev : events)
-        {
-            if (ev.id == 3)
-            {
-                count++;
-            }
-        }
-        if (count > count_table)
-        {
-            // клиент уходит и генереруется id11
-        }
+        std::cerr << "Ошибка: " << e.what() << std::endl;
+        exit(1);
     }
-    void handle_client_leaves(const Event &event)
-    { // доделать
-        for (const auto &e : events)
-        {
-            if (event.client_name != e.client_name)
-            {
-                throw std::runtime_error("ClientUnknown");
-            }
-        }
-    }
-    void read_file(const std::string &filename)
-    {
-        std::pair<int, int> timecurrent = {0, 0};
-        std::string line;
-        file.open(filename);
-        try
-        {
-            if (!file.is_open())
-            {
-                throw std::runtime_error("Не удалось открыть файл");
-            }
-
-            if (!std::getline(file, line))
-            {
-                throw std::runtime_error("Не удалось считать данные");
-            }
-            count_table = std::stoi(line);
-            if (count_table <= 0)
-                throw std::invalid_argument("Количество столов не может быть меньше 1");
-            tables.resize(count_table);
-            for (int i = 0; i < count_table; ++i)
-            {
-                tables[i].number = i + 1;
-            }
-            if (!std::getline(file, line))
-                throw std::runtime_error("Не удалось считать данные");
-            std::istringstream time_iss(line);
-            std::string start_str, end_str;
-            if (!(time_iss >> start_str >> end_str))
-                throw std::invalid_argument("Неверный формат времени работы");
-            time_work_start = Time::gettime(start_str);
-            time_work_end = Time::gettime(end_str);
-            if (!std::getline(file, line))
-                throw std::runtime_error("Не удалось считать данные");
-            price = std::stoi(line);
-            if (price <= 0)
-                throw std::invalid_argument("Цена не может быть меньше 0");
-            while (std::getline(file, line))
-            {
-                if (line.empty())
-                    continue;
-
-                Event event;
-                std::istringstream iss(line);
-                std::string time_str;
-
-                if (!(iss >> time_str >> event.id))
-                {
-                    throw std::invalid_argument("Неверный формат события");
-                }
-
-                Time::check_time(time_str);
-                event.time_event = Time::gettime(time_str);
-                if (event.time_event.first < timecurrent.first ||
-                    (event.time_event.first == timecurrent.first &&
-                     event.time_event.second < timecurrent.second))
-                {
-                    throw std::invalid_argument("События должны идти последовательно во времени");
-                }
-
-                if (event.id == 1 || event.id == 3 || event.id == 4)
-                {
-                    if (!(iss >> event.client_name))
-                    {
-                        throw std::invalid_argument("Не указано имя клиента");
-                    }
-                }
-                else if (event.id == 2)
-                {
-                    if (!(iss >> event.client_name >> event.table_number))
-                    {
-                        throw std::invalid_argument("Неверный формат события для ID 2");
-                    }
-                    if (event.table_number > count_table || event.table_number < 1)
-                    {
-                        throw std::invalid_argument("Неверный номер стола");
-                    }
-                }
-                else
-                {
-                    throw std::invalid_argument("Неизвестный ID события");
-                }
-
-                for (char c : event.client_name)
-                {
-                    if (!(islower(c) || isdigit(c) || c == '_' || c == '-'))
-                    {
-                        throw std::invalid_argument("Неправильное имя клента");
-                    }
-                }
-                timecurrent = event.time_event;
-                events.push_back(event);
-
-                switch (event.id)
-                {
-                case 1:
-                    handle_client_arrival(event);
-                    break;
-                case 2:
-                    handle_client_seat(event);
-                    break;
-                case 3:
-                    handle_client_leaves(event);
-                    break;
-                case 4:
-                    break;
-                default:
-                    break;
-                }
-            }
-        }
-        catch (const std::exception &e)
-        {
-            std::cerr << "Ошибка: " << e.what() << std::endl;
-            exit(1);
-        }
-    }
-};
+}
 
 int main(int argc, char *argv[])
 {
@@ -309,4 +370,5 @@ int main(int argc, char *argv[])
     }
     Computer_club club;
     club.read_file(argv[1]);
+    return 0;
 }
